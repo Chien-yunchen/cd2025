@@ -81,64 +81,109 @@ int main() {
         return 1;
     }
 
-    int ch, c;
+    enum State { START, ID, NUMBER, ASSIGN } state = START;
+    int ch;
     char buffer[256];
-    int index;
+    int index = 0;
     TokenNode *token_list = NULL;
 
     while ((ch = fgetc(file)) != EOF) {
-        if (is_space(ch)) continue;
+        switch (state) {
+            case START:
+                if (is_space(ch)) {
+                    continue;
+                } else if (is_letter(ch)) {
+                    buffer[index++] = ch;
+                    state = ID;
+                } else if (is_digit(ch)) {
+                    buffer[index++] = ch;
+                    state = NUMBER;
+                } else if (ch == '=') {
+                    buffer[index++] = ch;
+                    state = ASSIGN;
+                } else {
+                    char symbol[3] = {ch, '\0'};
+                    const char *type = NULL;
+                    switch (ch) {
+                        case '+': type = PLUS_TOKEN; break;
+                        case '-': type = MINUS_TOKEN; break;
+                        case '(': type = LEFTPAREN_TOKEN; break;
+                        case ')': type = RIGHTPAREN_TOKEN; break;
+                        case '{': type = LEFTBRACE_TOKEN; break;
+                        case '}': type = RIGHTBRACE_TOKEN; break;
+                        case ';': type = SEMICOLON_TOKEN; break;
+                        case '>': {
+                            int next = fgetc(file);
+                            if (next == '=') {
+                                strcpy(symbol, ">=");
+                                type = GREATEREQUAL_TOKEN;
+                            } else {
+                                ungetc(next, file);
+                                type = GREATER_TOKEN;
+                            }
+                            break;
+                        }
+                        case '<': {
+                            int next = fgetc(file);
+                            if (next == '=') {
+                                strcpy(symbol, "<=");
+                                type = LESSEQUAL_TOKEN;
+                            } else {
+                                ungetc(next, file);
+                                type = LESS_TOKEN;
+                            }
+                            break;
+                        }
+                        default: break;
+                    }
+                    if (type) append_token(&token_list, symbol, type);
+                    state = START;
+                }
+                break;
 
-        if (is_letter(ch)) {
-            index = 0;
-            buffer[index++] = ch;
-            while ((c = fgetc(file)) != EOF && !is_space(c) && is_alnum_or_underscore(c)) {
-                buffer[index++] = c;
+            case ID: {
+                if (is_alnum_or_underscore(ch)) {
+                    buffer[index++] = ch;
+                } else {
+                    buffer[index] = '\0';
+                    const char *token;
+                    if (is_keyword(buffer, &token))
+                        append_token(&token_list, buffer, token);
+                    else
+                        append_token(&token_list, buffer, ID_TOKEN);
+                    ungetc(ch, file);
+                    index = 0;
+                    state = START;
+                }
+                break;
             }
-            buffer[index] = '\0';
-            if (c != EOF) ungetc(c, file);
 
-            const char *token;
-            if (is_keyword(buffer, &token))
-                append_token(&token_list, buffer, token);
-            else
-                append_token(&token_list, buffer, ID_TOKEN);
-
-        } else if (is_digit(ch)) {
-            index = 0;
-            buffer[index++] = ch;
-            while ((c = fgetc(file)) != EOF && !is_space(c) && is_digit(c)) {
-                buffer[index++] = c;
+            case NUMBER: {
+                if (is_digit(ch)) {
+                    buffer[index++] = ch;
+                } else {
+                    buffer[index] = '\0';
+                    append_token(&token_list, buffer, LITERAL_TOKEN);
+                    ungetc(ch, file);
+                    index = 0;
+                    state = START;
+                }
+                break;
             }
-            buffer[index] = '\0';
-            if (c != EOF) ungetc(c, file);
-            append_token(&token_list, buffer, LITERAL_TOKEN);
 
-        } else {
-            switch (ch) {
-                case '=':
-                    c = fgetc(file);
-                    if (c == '=') append_token(&token_list, "==", EQUAL_TOKEN);
-                    else { append_token(&token_list, "=", ASSIGN_TOKEN); if (c != EOF) ungetc(c, file); }
-                    break;
-                case '>':
-                    c = fgetc(file);
-                    if (c == '=') append_token(&token_list, ">=", GREATEREQUAL_TOKEN);
-                    else { append_token(&token_list, ">", GREATER_TOKEN); if (c != EOF) ungetc(c, file); }
-                    break;
-                case '<':
-                    c = fgetc(file);
-                    if (c == '=') append_token(&token_list, "<=", LESSEQUAL_TOKEN);
-                    else { append_token(&token_list, "<", LESS_TOKEN); if (c != EOF) ungetc(c, file); }
-                    break;
-                case '+': append_token(&token_list, "+", PLUS_TOKEN); break;
-                case '-': append_token(&token_list, "-", MINUS_TOKEN); break;
-                case '(': append_token(&token_list, "(", LEFTPAREN_TOKEN); break;
-                case ')': append_token(&token_list, ")", RIGHTPAREN_TOKEN); break;
-                case '{': append_token(&token_list, "{", LEFTBRACE_TOKEN); break;
-                case '}': append_token(&token_list, "}", RIGHTBRACE_TOKEN); break;
-                case ';': append_token(&token_list, ";", SEMICOLON_TOKEN); break;
-                default: break;
+            case ASSIGN: {
+                if (ch == '=') {
+                    buffer[index++] = ch;
+                    buffer[index] = '\0';
+                    append_token(&token_list, buffer, EQUAL_TOKEN);
+                } else {
+                    buffer[index] = '\0';
+                    append_token(&token_list, buffer, ASSIGN_TOKEN);
+                    ungetc(ch, file);
+                }
+                index = 0;
+                state = START;
+                break;
             }
         }
     }
